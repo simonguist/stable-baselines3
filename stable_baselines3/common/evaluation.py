@@ -13,7 +13,6 @@ def evaluate_policy(
     env: Union[gym.Env, VecEnv],
     n_eval_episodes: int = 10,
     deterministic: bool = True,
-    render: bool = False,
     callback: Optional[Callable[[Dict[str, Any], Dict[str, Any]], None]] = None,
     reward_threshold: Optional[float] = None,
     return_episode_rewards: bool = False,
@@ -38,7 +37,6 @@ def evaluate_policy(
     :param env: The gym environment or ``VecEnv`` environment.
     :param n_eval_episodes: Number of episode to evaluate the agent
     :param deterministic: Whether to use deterministic or stochastic actions
-    :param render: Whether to render the environment or not
     :param callback: callback function to do additional checks,
         called after each step. Gets locals() and globals() passed as parameters.
     :param reward_threshold: Minimum expected reward per episode,
@@ -118,9 +116,6 @@ def evaluate_policy(
                         episode_counts[i] += 1
                     current_rewards[i] = 0
                     current_lengths[i] = 0
-
-        if render:
-            env.render()
 
     mean_reward = np.mean(episode_rewards)
     std_reward = np.std(episode_rewards)

@@ -274,6 +274,10 @@ class EvalCallback(EventCallback):
       When using multiple environments, each call to  ``env.step()``
       will effectively correspond to ``n_envs`` steps.
       To account for that, you can use ``eval_freq = max(eval_freq // n_envs, 1)``
+    
+    .. warning::
+      To render while evaluation make sure to pass the ``render_mode="human"`` argument
+      when making the environment. ``eval_env = gym.make('env_id', render_mode="human")``
 
     :param eval_env: The environment used for initialization
     :param callback_on_new_best: Callback to trigger
@@ -287,7 +291,6 @@ class EvalCallback(EventCallback):
         according to performance on the eval env will be saved.
     :param deterministic: Whether the evaluation should
         use a stochastic or deterministic actions.
-    :param render: Whether to render or not the environment during evaluation
     :param verbose:
     :param warn: Passed to ``evaluate_policy`` (warns if ``eval_env`` has not been
         wrapped with a Monitor wrapper)
@@ -303,7 +306,6 @@ class EvalCallback(EventCallback):
         log_path: Optional[str] = None,
         best_model_save_path: Optional[str] = None,
         deterministic: bool = True,
-        render: bool = False,
         verbose: int = 1,
         warn: bool = True,
     ):
@@ -319,7 +321,6 @@ class EvalCallback(EventCallback):
         self.best_mean_reward = -np.inf
         self.last_mean_reward = -np.inf
         self.deterministic = deterministic
-        self.render = render
         self.warn = warn
 
         # Convert to VecEnv for consistency
@@ -394,7 +395,6 @@ class EvalCallback(EventCallback):
                 self.model,
                 self.eval_env,
                 n_eval_episodes=self.n_eval_episodes,
-                render=self.render,
                 deterministic=self.deterministic,
                 return_episode_rewards=True,
                 warn=self.warn,
