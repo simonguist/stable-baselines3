@@ -276,12 +276,13 @@ def _check_render(env: gym.Env, warn: bool = True, headless: bool = False) -> No
     :param headless: Whether to disable render modes
         that require a graphical interface. False by default.
     """
-    render_modes = env.metadata.get("render.modes")
+    env_spec = env.spec
+    render_modes = env.metadata.get("render_modes").copy()
     if render_modes is None:
         if warn:
             warnings.warn(
                 "No render modes was declared in the environment "
-                " (env.metadata['render.modes'] is None or not defined), "
+                " (env.metadata['render_modes'] is None or not defined), "
                 "you may have trouble when calling `.render()`"
             )
 
@@ -291,10 +292,16 @@ def _check_render(env: gym.Env, warn: bool = True, headless: bool = False) -> No
         if headless and "human" in render_modes:
             render_modes.remove("human")
         # Check all declared render modes
-        for render_mode in render_modes:
-            env.render(mode=render_mode)
-        env.close()
-
+        for mode in render_modes:
+            new_env = env_spec.make(render_mode=mode)
+            if mode != "human":
+                new_env.reset()
+                new_env.step(new_env.action_space.sample())
+                new_env.render()
+            else:
+                new_env.reset()
+                new_env.step(new_env.action_space.sample())
+            new_env.close()
 
 def check_env(env: gym.Env, warn: bool = True, skip_render_check: bool = True) -> None:
     """

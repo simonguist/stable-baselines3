@@ -44,10 +44,14 @@ class VecVideoRecorder(VecEnvWrapper):
 
         if isinstance(temp_env, DummyVecEnv) or isinstance(temp_env, SubprocVecEnv):
             metadata = temp_env.get_attr("metadata")[0]
+            render_mode = temp_env.get_attr
         else:
             metadata = temp_env.metadata
 
         self.env.metadata = metadata
+
+        print(self.env)
+        breakpoint()
 
         self.record_video_trigger = record_video_trigger
         self.video_recorder = None
