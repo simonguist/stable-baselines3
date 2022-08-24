@@ -53,7 +53,7 @@ class IdentityEnv(Env):
     def _get_reward(self, action: Union[int, np.ndarray]) -> float:
         return 1.0 if np.all(self.state == action) else 0.0
 
-    def render(self, mode: str = "human") -> None:
+    def render(self) -> None:
         pass
 
 
@@ -150,5 +150,5 @@ class FakeImageEnv(Env):
         done = self.current_step >= self.ep_length
         return self.observation_space.sample(), reward, done, {}
 
-    def render(self, mode: str = "human") -> None:
+    def render(self) -> None:
         pass
