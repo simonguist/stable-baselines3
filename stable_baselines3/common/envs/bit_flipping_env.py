@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, Union
 
 import numpy as np
 from gym import Env, spaces
+from gym.utils.renderer import Renderer
 from gym.envs.registration import EnvSpec
 
 from stable_baselines3.common.type_aliases import GymStepReturn
@@ -27,6 +28,11 @@ class BitFlippingEnv(Env):
 
     spec = EnvSpec("BitFlippingEnv-v0")
 
+    metadata = {
+        "render_modes": ["array", "human"],
+        "render_fps": 4,
+    }
+
     def __init__(
         self,
         n_bits: int = 10,
@@ -35,6 +41,7 @@ class BitFlippingEnv(Env):
         discrete_obs_space: bool = False,
         image_obs_space: bool = False,
         channel_first: bool = True,
+        render_mode: Optional[str] = None,
     ):
         super().__init__()
         # Shape of the observation when using image space
@@ -102,6 +109,10 @@ class BitFlippingEnv(Env):
         self.max_steps = max_steps
         self.current_step = 0
 
+        self.render_mode = render_mode
+
+        self.renderer = Renderer(self.render_mode, self._render)
+
     def seed(self, seed: int) -> None:
         self.obs_space.seed(seed)
 
@@ -162,6 +173,10 @@ class BitFlippingEnv(Env):
             self.obs_space.seed(seed)
         self.current_step = 0
         self.state = self.obs_space.sample()
+
+        self.renderer.reset()
+        self.renderer.render_step()
+
         return self._get_obs()
 
     def step(self, action: Union[np.ndarray, int]) -> GymStepReturn:
@@ -182,6 +197,8 @@ class BitFlippingEnv(Env):
         # Episode terminate when we reached the goal or the max number of steps
         info = {"is_success": done}
         done = done or self.current_step >= self.max_steps
+        self.renderer.render_step()
+
         return obs, reward, done, info
 
     def compute_reward(
@@ -203,8 +220,12 @@ class BitFlippingEnv(Env):
         distance = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
         return -(distance > 0).astype(np.float32)
 
-    def render(self, mode: str = "human") -> Optional[np.ndarray]:
-        if mode == "rgb_array":
+    def render(self) :
+        return self.renderer.get_renders()
+        
+    def _render(self, mode: str)-> Optional[np.ndarray]:
+        assert mode in self.metadata["render_modes"]
+        if mode == "array":
             return self.state.copy()
         print(self.state)
 
