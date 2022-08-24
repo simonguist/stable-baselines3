@@ -1,6 +1,7 @@
 from typing import Dict, Optional, Union
 
 import gym
+from gym.utils.renderer import Renderer
 import numpy as np
 
 from stable_baselines3.common.type_aliases import GymStepReturn
@@ -34,6 +35,11 @@ class SimpleMultiObsEnv(gym.Env):
     :param channel_last: If true, the image will be channel last, else it will be channel first
     """
 
+    metadata = {
+        "render_modes": ["human"],
+        "render_fps": 4,
+    }
+
     def __init__(
         self,
         num_col: int = 4,
@@ -41,6 +47,7 @@ class SimpleMultiObsEnv(gym.Env):
         random_start: bool = True,
         discrete_actions: bool = True,
         channel_last: bool = True,
+        render_mode: Optional[str] = None,
     ):
         super().__init__()
 
@@ -76,6 +83,10 @@ class SimpleMultiObsEnv(gym.Env):
         self.init_state_mapping(num_col, num_row)
 
         self.max_state = len(self.state_mapping) - 1
+
+        self.render_mode = render_mode
+
+        self.renderer = Renderer(self.render_mode, self._render)
 
     def init_state_mapping(self, num_col: int, num_row: int) -> None:
         """
@@ -156,14 +167,20 @@ class SimpleMultiObsEnv(gym.Env):
 
         self.log = f"Went {self.action2str[action]} in state {prev_state}, got to state {self.state}"
 
+        self.renderer.render_step()
+
         return self.get_state_mapping(), reward, done, {"got_to_end": got_to_end}
 
-    def render(self, mode: str = "human") -> None:
+    def render(self):
+        return self.renderer.get_renders()
+    
+    def _render(self, mode: str)-> Optional[np.ndarray]:
         """
         Prints the log of the environment.
 
         :param mode:
         """
+        assert mode in self.metadata["render_modes"]
         print(self.log)
 
     def reset(self, seed: Optional[int] = None) -> Dict[str, np.ndarray]:
@@ -180,4 +197,8 @@ class SimpleMultiObsEnv(gym.Env):
             self.state = 0
         else:
             self.state = np.random.randint(0, self.max_state)
+        
+        self.renderer.reset()
+        self.renderer.render_step()
+
         return self.state_mapping[self.state]
