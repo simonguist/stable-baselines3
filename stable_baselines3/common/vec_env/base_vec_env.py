@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, U
 
 import cloudpickle
 import gym
+from gym.utils.renderer import Renderer
 import numpy as np
 
 # Define type aliases here to avoid circular import
@@ -53,12 +54,14 @@ class VecEnv(ABC):
     :param action_space: the action space
     """
 
-    metadata = {"render.modes": ["human", "rgb_array"]}
+    metadata = {"render_modes": ["human", "rgb_array"]}
 
-    def __init__(self, num_envs: int, observation_space: gym.spaces.Space, action_space: gym.spaces.Space):
+    def __init__(self, num_envs: int, observation_space: gym.spaces.Space, action_space: gym.spaces.Space, render_mode: Optional[str] = None):
         self.num_envs = num_envs
         self.observation_space = observation_space
         self.action_space = action_space
+        self.render_mode = render_mode
+        self.renderer = Renderer(self.render_mode, self._render)
 
     @abstractmethod
     def reset(self) -> VecEnvObs:
@@ -160,19 +163,20 @@ class VecEnv(ABC):
         """
         self.step_async(actions)
         return self.step_wait()
-
+        
     def get_images(self) -> Sequence[np.ndarray]:
         """
         Return RGB images from each environment
         """
         raise NotImplementedError
 
-    def render(self, mode: str = "human") -> Optional[np.ndarray]:
+    def _render(self, mode: str) -> Optional[np.ndarray]:
         """
         Gym environment rendering
 
         :param mode: the rendering type
         """
+
         try:
             imgs = self.get_images()
         except NotImplementedError:
@@ -181,6 +185,7 @@ class VecEnv(ABC):
 
         # Create a big image by tiling images from subprocesses
         bigimg = tile_images(imgs)
+        
         if mode == "human":
             import cv2  # pytype:disable=import-error
 
@@ -191,6 +196,9 @@ class VecEnv(ABC):
         else:
             raise NotImplementedError(f"Render mode {mode} is not supported by VecEnvs")
 
+    def render(self, mode: str = "human"):
+        return self.renderer.get_renders()
+        
     @abstractmethod
     def seed(self, seed: Optional[int] = None) -> List[Union[None, int]]:
         """

@@ -24,7 +24,12 @@ class DummyVecEnv(VecEnv):
     def __init__(self, env_fns: List[Callable[[], gym.Env]]):
         self.envs = [fn() for fn in env_fns]
         env = self.envs[0]
-        VecEnv.__init__(self, len(env_fns), env.observation_space, env.action_space)
+
+        if env.render_mode is "human" and len(env_fns)>1:
+            for env in self.envs:
+                env.renderer.mode = "rgb_array"
+        
+        VecEnv.__init__(self, len(env_fns), env.observation_space, env.action_space, env.render_mode)
         obs_space = env.observation_space
         self.keys, shapes, dtypes = obs_space_info(obs_space)
 
@@ -48,6 +53,8 @@ class DummyVecEnv(VecEnv):
                 self.buf_infos[env_idx]["terminal_observation"] = obs
                 obs = self.envs[env_idx].reset()
             self._save_obs(env_idx, obs)
+        if self.num_envs > 1:
+            self.renderer.render_step()
         return (self._obs_from_buf(), np.copy(self.buf_rews), np.copy(self.buf_dones), deepcopy(self.buf_infos))
 
     def seed(self, seed: Optional[int] = None) -> List[Union[None, int]]:
@@ -65,6 +72,9 @@ class DummyVecEnv(VecEnv):
         for env_idx in range(self.num_envs):
             obs = self.envs[env_idx].reset()
             self._save_obs(env_idx, obs)
+        if self.num_envs > 1:
+            self.renderer.reset()
+            self.renderer.render_step()
         return self._obs_from_buf()
 
     def close(self) -> None:
@@ -72,9 +82,9 @@ class DummyVecEnv(VecEnv):
             env.close()
 
     def get_images(self) -> Sequence[np.ndarray]:
-        return [env.render(mode="rgb_array") for env in self.envs]
+        return [env.render()[0] for env in self.envs]
 
-    def render(self, mode: str = "human") -> Optional[np.ndarray]:
+    def render(self) -> Optional[np.ndarray]:
         """
         Gym environment rendering. If there are multiple environments then
         they are tiled together in one image via ``BaseVecEnv.render()``.
@@ -87,9 +97,9 @@ class DummyVecEnv(VecEnv):
         :param mode: The rendering type.
         """
         if self.num_envs == 1:
-            return self.envs[0].render(mode=mode)
+            return self.envs[0].render()
         else:
-            return super().render(mode=mode)
+            return super().render()
 
     def _save_obs(self, env_idx: int, obs: VecEnvObs) -> None:
         for key in self.keys:

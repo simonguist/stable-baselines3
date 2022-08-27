@@ -29,7 +29,7 @@ class BitFlippingEnv(Env):
     spec = EnvSpec("BitFlippingEnv-v0")
 
     metadata = {
-        "render_modes": ["array", "human"],
+        "render_modes": ["rgb_array", "human"],
         "render_fps": 4,
     }
 
@@ -225,7 +225,7 @@ class BitFlippingEnv(Env):
         
     def _render(self, mode: str)-> Optional[np.ndarray]:
         assert mode in self.metadata["render_modes"]
-        if mode == "array":
+        if mode == "rgb_array":
             return self.state.copy()
         print(self.state)
 

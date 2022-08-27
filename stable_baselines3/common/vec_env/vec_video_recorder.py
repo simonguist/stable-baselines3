@@ -50,9 +50,6 @@ class VecVideoRecorder(VecEnvWrapper):
 
         self.env.metadata = metadata
 
-        print(self.env)
-        breakpoint()
-
         self.record_video_trigger = record_video_trigger
         self.video_recorder = None
 

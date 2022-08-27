@@ -123,6 +123,7 @@ class SubprocVecEnv(VecEnv):
         results = [remote.recv() for remote in self.remotes]
         self.waiting = False
         obs, rews, dones, infos = zip(*results)
+        self.renderer.render_step()
         return _flatten_obs(obs, self.observation_space), np.stack(rews), np.stack(dones), infos
 
     def seed(self, seed: Optional[int] = None) -> List[Union[None, int]]:
@@ -136,6 +137,7 @@ class SubprocVecEnv(VecEnv):
         for remote in self.remotes:
             remote.send(("reset", None))
         obs = [remote.recv() for remote in self.remotes]
+        self.renderer.reset()
         return _flatten_obs(obs, self.observation_space)
 
     def close(self) -> None:
