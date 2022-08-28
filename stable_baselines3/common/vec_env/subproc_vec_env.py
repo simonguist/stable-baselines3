@@ -41,7 +41,7 @@ def _worker(  # noqa: C901
                 observation = env.reset()
                 remote.send(observation)
             elif cmd == "render":
-                remote.send(env.render(data))
+                remote.send(env.render())
             elif cmd == "close":
                 env.close()
                 remote.close()
@@ -57,6 +57,8 @@ def _worker(  # noqa: C901
                 remote.send(setattr(env, data[0], data[1]))
             elif cmd == "is_wrapped":
                 remote.send(is_wrapped(env, data))
+            elif cmd == "set_rgb_array_rendering":
+                env.renderer.mode = "rgb_array"
             else:
                 raise NotImplementedError(f"`{cmd}` is not implemented in the worker")
         except EOFError:
@@ -112,7 +114,13 @@ class SubprocVecEnv(VecEnv):
 
         self.remotes[0].send(("get_spaces", None))
         observation_space, action_space = self.remotes[0].recv()
-        VecEnv.__init__(self, len(env_fns), observation_space, action_space)
+        self.remotes[0].send(("get_attr", "render_mode"))
+        render_mode = self.remotes[0].recv()
+        if render_mode == "human" and n_envs>1:
+            for remote in self.remotes:
+                remote.send(("set_rgb_array_rendering", None))
+
+        VecEnv.__init__(self, len(env_fns), observation_space, action_space, render_mode)
 
     def step_async(self, actions: np.ndarray) -> None:
         for remote, action in zip(self.remotes, actions):
@@ -123,7 +131,8 @@ class SubprocVecEnv(VecEnv):
         results = [remote.recv() for remote in self.remotes]
         self.waiting = False
         obs, rews, dones, infos = zip(*results)
-        self.renderer.render_step()
+        if self.num_envs > 1:
+            self.renderer.render_step()
         return _flatten_obs(obs, self.observation_space), np.stack(rews), np.stack(dones), infos
 
     def seed(self, seed: Optional[int] = None) -> List[Union[None, int]]:
@@ -137,7 +146,9 @@ class SubprocVecEnv(VecEnv):
         for remote in self.remotes:
             remote.send(("reset", None))
         obs = [remote.recv() for remote in self.remotes]
-        self.renderer.reset()
+        if self.num_envs > 1:
+            self.renderer.reset()
+            self.renderer.render_step()
         return _flatten_obs(obs, self.observation_space)
 
     def close(self) -> None:
@@ -156,8 +167,8 @@ class SubprocVecEnv(VecEnv):
         for pipe in self.remotes:
             # gather images from subprocesses
             # `mode` will be taken into account later
-            pipe.send(("render", "rgb_array"))
-        imgs = [pipe.recv() for pipe in self.remotes]
+            pipe.send(("render", None))
+        imgs = [pipe.recv()[0] for pipe in self.remotes]
         return imgs
 
     def get_attr(self, attr_name: str, indices: VecEnvIndices = None) -> List[Any]:

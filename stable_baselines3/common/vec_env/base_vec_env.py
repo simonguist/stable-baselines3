@@ -176,7 +176,6 @@ class VecEnv(ABC):
 
         :param mode: the rendering type
         """
-
         try:
             imgs = self.get_images()
         except NotImplementedError:
@@ -196,7 +195,7 @@ class VecEnv(ABC):
         else:
             raise NotImplementedError(f"Render mode {mode} is not supported by VecEnvs")
 
-    def render(self, mode: str = "human"):
+    def render(self):
         return self.renderer.get_renders()
         
     @abstractmethod

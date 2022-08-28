@@ -25,7 +25,7 @@ class DummyVecEnv(VecEnv):
         self.envs = [fn() for fn in env_fns]
         env = self.envs[0]
 
-        if env.render_mode is "human" and len(env_fns)>1:
+        if env.render_mode =="human" and len(env_fns)>1:
             for env in self.envs:
                 env.renderer.mode = "rgb_array"
         
