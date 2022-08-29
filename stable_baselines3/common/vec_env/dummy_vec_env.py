@@ -24,7 +24,7 @@ class DummyVecEnv(VecEnv):
     def __init__(self, env_fns: List[Callable[[], gym.Env]]):
         self.envs = [fn() for fn in env_fns]
         env = self.envs[0]
-
+    
         if env.render_mode =="human" and len(env_fns)>1:
             for env in self.envs:
                 env.renderer.mode = "rgb_array"
@@ -100,6 +100,26 @@ class DummyVecEnv(VecEnv):
             return self.envs[0].render()
         else:
             return super().render()
+
+    def update_render_mode(self, render_mode: Optional[str] = None):
+        # Update global vec env renderer render mode
+        self.render_mode = render_mode
+        self.renderer.mode = render_mode
+        # Update individual environment render mode
+        if len(env_fns)>1:
+            for env in self.envs:
+                if render_mode == "human":
+                    # If human rendering and more than 1 env 
+                    # in VecEnv the individual environments 
+                    # need to output rgb array's to create image tiles.
+                    env.render_mode == "rgb_array"
+                    env.renderer.mode = "rgb_array"
+                else:
+                    env.render_mode == render_mode
+                    env.renderer.mode = render_mode
+        else:
+            self.envs[0].render_mode = render_mode
+            self.envs[0].renderer.mode = render_mode
 
     def _save_obs(self, env_idx: int, obs: VecEnvObs) -> None:
         for key in self.keys:

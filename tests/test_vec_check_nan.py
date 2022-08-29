@@ -9,7 +9,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecCheckNan
 class NanAndInfEnv(gym.Env):
     """Custom Environment that raised NaNs and Infs"""
 
-    metadata = {"render.modes": ["human"]}
+    metadata = {"render_modes": []}
 
     def __init__(self):
         super().__init__()
@@ -30,7 +30,7 @@ class NanAndInfEnv(gym.Env):
     def reset():
         return [0.0]
 
-    def render(self, mode="human", close=False):
+    def render(self):
         pass
 
 

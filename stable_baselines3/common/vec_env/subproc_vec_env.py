@@ -57,8 +57,10 @@ def _worker(  # noqa: C901
                 remote.send(setattr(env, data[0], data[1]))
             elif cmd == "is_wrapped":
                 remote.send(is_wrapped(env, data))
-            elif cmd == "set_rgb_array_rendering":
+            elif cmd == "set_rgb_array_render_mode":
                 env.renderer.mode = "rgb_array"
+            elif cmd == "set_human_render_mode":
+                env.renderer.mode = "human"
             else:
                 raise NotImplementedError(f"`{cmd}` is not implemented in the worker")
         except EOFError:
@@ -92,7 +94,7 @@ class SubprocVecEnv(VecEnv):
     def __init__(self, env_fns: List[Callable[[], gym.Env]], start_method: Optional[str] = None):
         self.waiting = False
         self.closed = False
-        n_envs = len(env_fns)
+        self.n_envs = len(env_fns)
 
         if start_method is None:
             # Fork is not a thread safe method (see issue #217)
@@ -102,7 +104,7 @@ class SubprocVecEnv(VecEnv):
             start_method = "forkserver" if forkserver_available else "spawn"
         ctx = mp.get_context(start_method)
 
-        self.remotes, self.work_remotes = zip(*[ctx.Pipe() for _ in range(n_envs)])
+        self.remotes, self.work_remotes = zip(*[ctx.Pipe() for _ in range(self.n_envs)])
         self.processes = []
         for work_remote, remote, env_fn in zip(self.work_remotes, self.remotes, env_fns):
             args = (work_remote, remote, CloudpickleWrapper(env_fn))
@@ -116,9 +118,9 @@ class SubprocVecEnv(VecEnv):
         observation_space, action_space = self.remotes[0].recv()
         self.remotes[0].send(("get_attr", "render_mode"))
         render_mode = self.remotes[0].recv()
-        if render_mode == "human" and n_envs>1:
+        if render_mode == "human" and self.n_envs>1:
             for remote in self.remotes:
-                remote.send(("set_rgb_array_rendering", None))
+                remote.send(("set_rgb_array_render_mode", None))
 
         VecEnv.__init__(self, len(env_fns), observation_space, action_space, render_mode)
 
@@ -170,6 +172,21 @@ class SubprocVecEnv(VecEnv):
             pipe.send(("render", None))
         imgs = [pipe.recv()[0] for pipe in self.remotes]
         return imgs
+    
+    def update_render_mode(self, render_mode: Optional[str] = None):
+        # Update global vec env renderer render mode
+        self.render_mode = render_mode
+        self.renderer.mode = render_mode
+        # Update individual environment render mode
+        if self.n_envs>1:
+            for remote in self.remotes:
+                # If human rendering and more than 1 env 
+                # in VecEnv the individual environments 
+                # need to output rgb array's to create image tiles.
+                remote.send(("set_rgb_array_render_mode", None))
+        else:
+            self.envs[0].render_mode = render_mode
+            self.envs[0].renderer.mode = render_mode
 
     def get_attr(self, attr_name: str, indices: VecEnvIndices = None) -> List[Any]:
         """Return attribute from vectorized environment (see base class)."""

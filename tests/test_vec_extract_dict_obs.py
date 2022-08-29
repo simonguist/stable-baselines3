@@ -8,7 +8,7 @@ from stable_baselines3.common.vec_env import VecExtractDictObs, VecMonitor
 class DictObsVecEnv:
     """Custom Environment that produces observation in a dictionary like the procgen env"""
 
-    metadata = {"render.modes": ["human"]}
+    metadata = {"render_modes": ["human"]}
 
     def __init__(self):
         self.num_envs = 4
@@ -29,7 +29,7 @@ class DictObsVecEnv:
     def reset(self):
         return {"rgb": np.zeros((self.num_envs, 86, 86))}
 
-    def render(self, mode="human", close=False):
+    def render(self):
         pass
 
 

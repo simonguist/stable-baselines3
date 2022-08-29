@@ -5,6 +5,7 @@ import multiprocessing
 from typing import Optional
 
 import gym
+from gym.utils.renderer import Renderer
 import numpy as np
 import pytest
 
@@ -17,7 +18,7 @@ VEC_ENV_WRAPPERS = [None, VecNormalize, VecFrameStack]
 
 
 class CustomGymEnv(gym.Env):
-    def __init__(self, space):
+    def __init__(self, space, render_mode: Optional[str] = None):
         """
         Custom gym environment for testing purposes
         """
@@ -26,11 +27,18 @@ class CustomGymEnv(gym.Env):
         self.current_step = 0
         self.ep_length = 4
 
+        self.render_mode = render_mode
+        self.renderer = Renderer(self.render_mode, self._render)
+
     def reset(self, seed: Optional[int] = None):
         if seed is not None:
             self.seed(seed)
         self.current_step = 0
         self._choose_next_state()
+
+        self.renderer.reset()
+        self.renderer.render_step()
+
         return self.state
 
     def step(self, action):
@@ -38,14 +46,18 @@ class CustomGymEnv(gym.Env):
         self._choose_next_state()
         self.current_step += 1
         done = self.current_step >= self.ep_length
+        self.renderer.render_step()
         return self.state, reward, done, {}
 
     def _choose_next_state(self):
         self.state = self.observation_space.sample()
 
-    def render(self, mode="human"):
+    def _render(self, mode):
         if mode == "rgb_array":
             return np.zeros((4, 4, 3))
+
+    def render(self):
+        return self.renderer.get_renders()
 
     def seed(self, seed=None):
         if seed is not None:
@@ -71,7 +83,7 @@ def test_vecenv_custom_calls(vec_env_class, vec_env_wrapper):
     """Test access to methods/attributes of vectorized environments"""
 
     def make_env():
-        return CustomGymEnv(gym.spaces.Box(low=np.zeros(2), high=np.ones(2)))
+        return CustomGymEnv(gym.spaces.Box(low=np.zeros(2), high=np.ones(2)), "rgb_array")
 
     vec_env = vec_env_class([make_env for _ in range(N_ENVS)])
 
@@ -85,7 +97,7 @@ def test_vecenv_custom_calls(vec_env_class, vec_env_wrapper):
     vec_env.seed(0)
     # Test render method call
     # vec_env.render()  # we need a X server  to test the "human" mode
-    vec_env.render(mode="rgb_array")
+    vec_env.render()
     env_method_results = vec_env.env_method("custom_method", 1, indices=None, dim_1=2)
     setattr_results = []
     # Set current_step to an arbitrary value

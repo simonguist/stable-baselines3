@@ -148,7 +148,6 @@ def test_evaluate_policy():
         model.get_env(),
         n_eval_episodes,
         deterministic=True,
-        render=False,
         callback=dummy_callback,
         reward_threshold=None,
         return_episode_rewards=True,

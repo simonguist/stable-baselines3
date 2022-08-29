@@ -482,12 +482,19 @@ class BaseAlgorithm(ABC):
             if maybe_is_success is not None and dones[idx]:
                 self.ep_success_buffer.append(maybe_is_success)
 
-    def get_env(self) -> Optional[VecEnv]:
+    def get_env(self, render_mode: Optional[str] = None) -> Optional[VecEnv]:
         """
         Returns the current environment (can be None if not defined).
 
+        :param render_mode: assign new rendering mode to the environment. If None, keep render_mode
         :return: The current environment
         """
+        if render_mode != self.env.render_mode and render_mode is not None:
+            if issubclass(self.env, VecEnv):
+                self.env.update_render_mode(render_mode)
+            else:
+                self.env.render_mode = render_mode
+                self.env.renderer.mode = render_mode
         return self.env
 
     def get_vec_normalize_env(self) -> Optional[VecNormalize]:

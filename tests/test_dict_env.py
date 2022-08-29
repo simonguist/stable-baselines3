@@ -15,7 +15,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFram
 class DummyDictEnv(gym.Env):
     """Custom Environment for testing purposes only"""
 
-    metadata = {"render.modes": ["human"]}
+    metadata = {"render_modes": []}
 
     def __init__(
         self,
@@ -79,7 +79,7 @@ class DummyDictEnv(gym.Env):
             self.observation_space.seed(seed)
         return self.observation_space.sample()
 
-    def render(self, mode="human"):
+    def render(self):
         pass
 
 

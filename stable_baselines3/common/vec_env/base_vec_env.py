@@ -163,6 +163,15 @@ class VecEnv(ABC):
         """
         self.step_async(actions)
         return self.step_wait()
+    
+    @abstractmethod
+    def update_render_mode(self, render_mode: Optional[str] = None):
+        """
+        Assign a render mode to the renderer.
+
+        :param render_mode: new render mode, "human", "rgb_array" or "None"
+        """
+        raise NotImplementedError
         
     def get_images(self) -> Sequence[np.ndarray]:
         """
@@ -284,8 +293,8 @@ class VecEnvWrapper(VecEnv):
     def close(self) -> None:
         return self.venv.close()
 
-    def render(self, mode: str = "human") -> Optional[np.ndarray]:
-        return self.venv.render(mode=mode)
+    def render(self) -> Optional[np.ndarray]:
+        return self.venv.render()
 
     def get_images(self) -> Sequence[np.ndarray]:
         return self.venv.get_images()
