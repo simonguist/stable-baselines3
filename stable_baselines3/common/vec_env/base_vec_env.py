@@ -172,7 +172,7 @@ class VecEnv(ABC):
         :param render_mode: new render mode, "human", "rgb_array" or "None"
         """
         raise NotImplementedError
-        
+
     def get_images(self) -> Sequence[np.ndarray]:
         """
         Return RGB images from each environment
@@ -275,7 +275,7 @@ class VecEnvWrapper(VecEnv):
             action_space=action_space or venv.action_space,
         )
         self.class_attributes = dict(inspect.getmembers(self.__class__))
-
+    
     def step_async(self, actions: np.ndarray) -> None:
         self.venv.step_async(actions)
 
@@ -296,6 +296,8 @@ class VecEnvWrapper(VecEnv):
     def render(self) -> Optional[np.ndarray]:
         return self.venv.render()
 
+    def update_render_mode(self, render_mode: Optional[str] = None):
+        return self.venv.update_render_mode(render_mode)
     def get_images(self) -> Sequence[np.ndarray]:
         return self.venv.get_images()
 
