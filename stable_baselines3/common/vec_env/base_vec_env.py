@@ -268,11 +268,14 @@ class VecEnvWrapper(VecEnv):
         action_space: Optional[gym.spaces.Space] = None,
     ):
         self.venv = venv
+        self.spec = venv.spec
+        self.metadata
         VecEnv.__init__(
             self,
             num_envs=venv.num_envs,
             observation_space=observation_space or venv.observation_space,
             action_space=action_space or venv.action_space,
+            render_mode=venv.render_mode
         )
         self.class_attributes = dict(inspect.getmembers(self.__class__))
     

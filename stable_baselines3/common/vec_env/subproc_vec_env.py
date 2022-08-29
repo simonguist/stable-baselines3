@@ -121,6 +121,11 @@ class SubprocVecEnv(VecEnv):
         if render_mode == "human" and self.n_envs>1:
             for remote in self.remotes:
                 remote.send(("set_rgb_array_render_mode", None))
+            
+        self.remotes[0].send(("get_attr", "metadata"))
+        self.metadata = self.remotes[0].recv
+        self.remotes[0].send(("get_attr", "spec"))
+        self.spec = self.remotes[0].recv
 
         VecEnv.__init__(self, len(env_fns), observation_space, action_space, render_mode)
 

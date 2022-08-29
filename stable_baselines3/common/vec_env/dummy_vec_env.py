@@ -39,6 +39,7 @@ class DummyVecEnv(VecEnv):
         self.buf_infos = [{} for _ in range(self.num_envs)]
         self.actions = None
         self.metadata = env.metadata
+        self.spec = env.spec
 
     def step_async(self, actions: np.ndarray) -> None:
         self.actions = actions
