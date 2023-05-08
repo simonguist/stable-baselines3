@@ -1,15 +1,19 @@
+from http.client import NOT_IMPLEMENTED
 import warnings
 from collections import deque
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch as th
+import random
 
 from stable_baselines3.common.buffers import DictReplayBuffer
 from stable_baselines3.common.preprocessing import get_obs_shape
 from stable_baselines3.common.type_aliases import DictReplayBufferSamples
 from stable_baselines3.common.vec_env import VecEnv, VecNormalize
 from stable_baselines3.her.goal_selection_strategy import KEY_TO_GOAL_STRATEGY, GoalSelectionStrategy
+from stable_baselines3.her.hindsight_state_selection_strategy import KEY_TO_HINDSIGHT_STATE_STRATEGY, KEY_TO_HINDSIGHT_STATE_STRATEGY_HORIZON, HindsightStateSelectionStrategy, HindsightStateSelectionStrategyHorizon
+
 
 
 def get_time_limit(env: VecEnv, current_max_episode_length: Optional[int]) -> int:
@@ -28,13 +32,13 @@ def get_time_limit(env: VecEnv, current_max_episode_length: Optional[int]) -> in
             if current_max_episode_length is None:
                 raise AttributeError
         # if not available check if a valid value was passed as an argument
-        except AttributeError as e:
+        except AttributeError:
             raise ValueError(
                 "The max episode length could not be inferred.\n"
                 "You must specify a `max_episode_steps` when registering the environment,\n"
                 "use a `gym.wrappers.TimeLimit` wrapper "
                 "or pass `max_episode_length` to the model constructor"
-            ) from e
+            )
     return current_max_episode_length
 
 
@@ -61,9 +65,12 @@ class HerReplayBuffer(DictReplayBuffer):
         it will be automatically inferred if the environment uses a ``gym.wrappers.TimeLimit`` wrapper.
     :param goal_selection_strategy: Strategy for sampling goals for replay.
         One of ['episode', 'final', 'future']
+     :param hindsight_state_selection_strategy: Strategy for sampling hindsight states for replay.
+        One of ['random', 'reward', 'adavantage']
     :param device: PyTorch device
     :param n_sampled_goal: Number of virtual transitions to create per real transition,
         by sampling new goals.
+    :param k_best
     :param handle_timeout_termination: Handle timeout termination (due to timelimit)
         separately and treat the task as infinite horizon task.
         https://github.com/DLR-RM/stable-baselines3/issues/284
@@ -77,25 +84,71 @@ class HerReplayBuffer(DictReplayBuffer):
         replay_buffer: Optional[DictReplayBuffer] = None,
         max_episode_length: Optional[int] = None,
         n_sampled_goal: int = 4,
+        n_sampled_hindsight_states: int = 3,
         goal_selection_strategy: Union[GoalSelectionStrategy, str] = "future",
+        hindsight_state_selection_strategy: Union[HindsightStateSelectionStrategy, str] = "random",
+        hindsight_state_selection_strategy_horizon: Union[HindsightStateSelectionStrategy, str] = "future",
         online_sampling: bool = True,
         handle_timeout_termination: bool = True,
+        apply_HER: bool = True,
+        apply_HSM: bool = False,
+        HSM_goal_env: bool = False,
+        HSM_shape: int = -1,
+        HSM_gamma = 0.999,
+        HSM_n_traj_freq = 100,
+        HSM_critic = None,
+        HSM_critic_target = None,
+        HSM_policy = None,
+        HSM_min_criterion = -1000,
+        n_sampled_hindsight_states_change_per_step = 0,
+        HSM_criterion_change_per_step = 0,
+        HSM_use_likelihood_ratio = False,
+        HSM_likelihood_ratio_cutoff = 1/np.e,
+        prioritized_replay_baseline = False,
+        logger = None
     ):
 
-        super().__init__(buffer_size, env.observation_space, env.action_space, device, env.num_envs)
+        super(HerReplayBuffer, self).__init__(buffer_size, env.observation_space, env.action_space, device, env.num_envs)
 
-        # convert goal_selection_strategy into GoalSelectionStrategy if string
-        if isinstance(goal_selection_strategy, str):
-            self.goal_selection_strategy = KEY_TO_GOAL_STRATEGY[goal_selection_strategy.lower()]
-        else:
-            self.goal_selection_strategy = goal_selection_strategy
+        if apply_HER:
+            # convert goal_selection_strategy into GoalSelectionStrategy if string
+            if isinstance(goal_selection_strategy, str):
+                self.goal_selection_strategy = KEY_TO_GOAL_STRATEGY[goal_selection_strategy.lower()]
+            else:
+                self.goal_selection_strategy = goal_selection_strategy
 
-        # check if goal_selection_strategy is valid
-        assert isinstance(
-            self.goal_selection_strategy, GoalSelectionStrategy
-        ), f"Invalid goal selection strategy, please use one of {list(GoalSelectionStrategy)}"
+            # check if goal_selection_strategy is valid
+            assert isinstance(
+                self.goal_selection_strategy, GoalSelectionStrategy
+            ), f"Invalid goal selection strategy, please use one of {list(GoalSelectionStrategy)}"
+        if apply_HSM:
+            # convert hindsight_state_selection_strategy into HindsightSelectionStrategy if string
+            if isinstance(hindsight_state_selection_strategy, str):
+                self.hindsight_state_selection_strategy = KEY_TO_HINDSIGHT_STATE_STRATEGY[hindsight_state_selection_strategy.lower()]
+            else:
+                self.hindsight_state_selection_strategy = hindsight_state_selection_strategy
+
+            # check if hindsight_state_selection_strategy is valid
+            assert isinstance(
+                self.hindsight_state_selection_strategy, HindsightStateSelectionStrategy
+            ), f"Invalid hindsight state selection strategy, please use one of {list(HindsightStateSelectionStrategy)}"
+
+            # convert hindsight_state_selection_strategy_horizon into HindsightSelectionStrategyHorizon if string
+            if isinstance(hindsight_state_selection_strategy_horizon, str):
+                self.hindsight_state_selection_strategy_horizon = KEY_TO_HINDSIGHT_STATE_STRATEGY_HORIZON[hindsight_state_selection_strategy_horizon.lower()]
+            else:
+                self.hindsight_state_selection_strategy_horizon = hindsight_state_selection_strategy_horizon
+
+            # check if hindsight_state_selection_strategy_horizon is valid
+            assert isinstance(
+                self.hindsight_state_selection_strategy_horizon, HindsightStateSelectionStrategyHorizon
+            ), f"Invalid hindsight state selection strategy, please use one of {list(HindsightStateSelectionStrategyHorizon)}"
+
 
         self.n_sampled_goal = n_sampled_goal
+
+        self.n_sampled_hindsight_states = n_sampled_hindsight_states
+
         # if we sample her transitions online use custom replay buffer
         self.online_sampling = online_sampling
         # compute ratio between HER replays and regular replays in percent for online HER sampling
@@ -111,12 +164,43 @@ class HerReplayBuffer(DictReplayBuffer):
 
         if online_sampling:
             replay_buffer = None
+            if apply_HSM and not apply_HER:
+                raise ValueError(f"Online sampling for sampling hindsight states is not supported!")
         self.replay_buffer = replay_buffer
         self.online_sampling = online_sampling
 
         # Handle timeouts termination properly if needed
         # see https://github.com/DLR-RM/stable-baselines3/issues/284
         self.handle_timeout_termination = handle_timeout_termination
+
+        self.apply_HER = apply_HER
+
+        self.apply_HSM = apply_HSM
+        self.HSM_goal_env = HSM_goal_env
+        self.HSM_shape = HSM_shape
+        self.HSM_critic = HSM_critic
+        self.HSM_critic_target = HSM_critic_target
+        self.HSM_policy = HSM_policy
+        self.HSM_gamma = HSM_gamma
+        self.HSM_n_traj_freq = HSM_n_traj_freq
+        self.HSM_min_criterion = HSM_min_criterion
+
+        self.n_total_steps = 0
+        self.n_sampled_hindsight_states_change_per_step = n_sampled_hindsight_states_change_per_step
+        self.HSM_criterion_change_per_step = HSM_criterion_change_per_step
+        self.HSM_use_likelihood_ratio = HSM_use_likelihood_ratio
+        self.HSM_likelihood_ratio_cutoff = HSM_likelihood_ratio_cutoff
+
+        self.prioritized_replay_baseline = prioritized_replay_baseline
+
+        self.HSM_logging = False
+
+        self.hsm_traj_buffer = []
+        self.idx_eps_hsm = 0
+        self.current_trajectory = []
+        self.current_hsm_trajectories = [[]  for _ in range(HSM_shape)]
+        self.extra_reset = True
+
 
         # buffer with episodes
         # number of episodes which can be stored until buffer size is reached
@@ -127,21 +211,35 @@ class HerReplayBuffer(DictReplayBuffer):
 
         # Get shape of observation and goal (usually the same)
         self.obs_shape = get_obs_shape(self.env.observation_space.spaces["observation"])
-        self.goal_shape = get_obs_shape(self.env.observation_space.spaces["achieved_goal"])
+        if self.apply_HER or self.HSM_goal_env:
+            self.goal_shape = get_obs_shape(self.env.observation_space.spaces["achieved_goal"])
 
         # input dimensions for buffer initialization
-        input_shape = {
-            "observation": (self.env.num_envs,) + self.obs_shape,
-            "achieved_goal": (self.env.num_envs,) + self.goal_shape,
-            "desired_goal": (self.env.num_envs,) + self.goal_shape,
-            "action": (self.action_dim,),
-            "reward": (1,),
-            "next_obs": (self.env.num_envs,) + self.obs_shape,
-            "next_achieved_goal": (self.env.num_envs,) + self.goal_shape,
-            "next_desired_goal": (self.env.num_envs,) + self.goal_shape,
-            "done": (1,),
-        }
-        self._observation_keys = ["observation", "achieved_goal", "desired_goal"]
+        if self.apply_HER or self.HSM_goal_env:
+            input_shape = {
+                "observation": (self.env.num_envs,) + self.obs_shape,
+                "achieved_goal": (self.env.num_envs,) + self.goal_shape,
+                "desired_goal": (self.env.num_envs,) + self.goal_shape,
+                "action": (self.action_dim,),
+                "reward": (1,),
+                "next_obs": (self.env.num_envs,) + self.obs_shape,
+                "next_achieved_goal": (self.env.num_envs,) + self.goal_shape,
+                "next_desired_goal": (self.env.num_envs,) + self.goal_shape,
+                "done": (1,),
+            }
+            self._observation_keys = ["observation", "achieved_goal", "desired_goal"]
+        else:
+            input_shape = {
+                "observation": (self.env.num_envs,) + self.obs_shape,
+                "action": (self.action_dim,),
+                "reward": (1,),
+                "next_obs": (self.env.num_envs,) + self.obs_shape,
+                "done": (1,),
+            }
+            self._observation_keys = ["observation"]
+
+
+
         self._buffer = {
             key: np.zeros((self.max_episode_stored, self.max_episode_length, *dim), dtype=np.float32)
             for key, dim in input_shape.items()
@@ -150,6 +248,18 @@ class HerReplayBuffer(DictReplayBuffer):
         self.info_buffer = [deque(maxlen=self.max_episode_length) for _ in range(self.max_episode_stored)]
         # episode length storage, needed for episodes which has less steps than the maximum length
         self.episode_lengths = np.zeros(self.max_episode_stored, dtype=np.int64)
+
+        # logging for gym robotic enfs
+        self.gym_robotics_logger = logger
+        self.n_hsm_traj = 0
+        self.n_success_hsm_traj = 0
+        self.n_dx_hsm_traj = 0
+        self.n_success_dx_hsm_traj = 0
+        self.n_traj = 0
+        self.n_success_traj = 0
+        self.n_dx_traj = 0
+        self.n_success_dx_traj = 0
+
 
     def __getstate__(self) -> Dict[str, Any]:
         """
@@ -264,6 +374,260 @@ class HerReplayBuffer(DictReplayBuffer):
 
         return self._buffer["next_achieved_goal"][her_episode_indices, transitions_indices]
 
+
+
+    def add_full_trajectories_HSM(
+            self,
+            trajectory,
+            hsm_trajectories
+            ):
+
+        self.n_traj += 1
+        if np.linalg.norm(trajectory[0][0]["achieved_goal"] - trajectory[-1][1]["achieved_goal"])>0.02:
+            self.n_dx_traj += 1
+        if sum([trajectory[idx][3]*1.0**idx for idx in range(0, len(trajectory))])>-49:
+            self.n_success_traj += 1
+        if (np.linalg.norm(trajectory[0][0]["achieved_goal"] - trajectory[-1][1]["achieved_goal"])>0.02 and
+                sum([trajectory[idx][3]*1.0**idx for idx in range(0, len(trajectory))])>-49):
+            self.n_success_dx_traj += 1
+
+        # store hsm trajectories in buffer
+        if self.prioritized_replay_baseline:
+            # use 'normal' trajectories
+            for hsm_trajectory in hsm_trajectories:
+                self.hsm_traj_buffer.append((trajectory, 0, self.idx_eps_hsm))
+        else:
+            # use extra trajectories
+            idx_env = 0
+            for hsm_trajectory in hsm_trajectories:
+                self.hsm_traj_buffer.append((hsm_trajectory, idx_env, self.idx_eps_hsm))
+                idx_env += 1
+        self.idx_eps_hsm += 1
+        # calculate criterion for every trajectory in hsm trajectories buffer
+        if len(self.hsm_traj_buffer)>=self.HSM_n_traj_freq:
+            hsm_trajectories_criterion = []
+            for hsm_trajectory, idx_env, idx_eps in self.hsm_traj_buffer:
+                if self.hindsight_state_selection_strategy == HindsightStateSelectionStrategy.RANDOM and self.hindsight_state_selection_strategy_horizon == HindsightStateSelectionStrategyHorizon.EPISODE:
+                    criterion = -np.random.random()
+                elif self.hindsight_state_selection_strategy == HindsightStateSelectionStrategy.REWARD and self.hindsight_state_selection_strategy_horizon == HindsightStateSelectionStrategyHorizon.EPISODE:
+                    criterion = -sum([hsm_trajectory[idx][3]*1.0**idx for idx in range(0, len(hsm_trajectory))])
+                elif self.hindsight_state_selection_strategy == HindsightStateSelectionStrategy.ACHIEVED_GOAL and self.hindsight_state_selection_strategy_horizon == HindsightStateSelectionStrategyHorizon.EPISODE:
+                    criterion = -float(np.linalg.norm(hsm_trajectory[0][0]["achieved_goal"] - hsm_trajectory[-1][1]["achieved_goal"])>self.HSM_min_criterion)
+                elif self.hindsight_state_selection_strategy == HindsightStateSelectionStrategy.REWARD_ACHIEVED_GOAL_002 and self.hindsight_state_selection_strategy_horizon == HindsightStateSelectionStrategyHorizon.EPISODE:
+                    if np.linalg.norm(hsm_trajectory[0][0]["achieved_goal"] - hsm_trajectory[-1][1]["achieved_goal"])>0.02:
+                        criterion = -sum([hsm_trajectory[idx][3]*1.0**idx for idx in range(0, len(hsm_trajectory))])
+                    else:
+                        criterion = 9999   # do not use
+                else:
+                    raise ValueError(f"Strategy {self.hindsight_state_selection_strategy} - {self.hindsight_state_selection_strategy_horizon} for sampling hindsight states is not supported!")
+                hsm_trajectories_criterion.append((criterion, hsm_trajectory, idx_eps, idx_env))
+
+            n_to_select = self.n_sampled_hindsight_states * self.HSM_n_traj_freq // self.HSM_shape
+            hsm_criteria = np.array([t[0] for t in hsm_trajectories_criterion])
+            print("crit:", hsm_criteria, "n:", n_to_select)
+            indices = np.argpartition(hsm_criteria, n_to_select)[:n_to_select]
+            print("ind:", indices)
+
+            HSM_min_criterion_eff = self.HSM_min_criterion + self.HSM_criterion_change_per_step * self.n_total_steps
+
+            for idx in indices:
+                criterion, trajectory, _, _ = hsm_trajectories_criterion[idx]
+                if -1.0*criterion>=HSM_min_criterion_eff:
+                    self.n_hsm_traj += 1
+                    if np.linalg.norm(trajectory[0][0]["achieved_goal"] - trajectory[-1][1]["achieved_goal"])>0.02:
+                        self.n_dx_hsm_traj += 1
+                    if sum([trajectory[idx][3]*1.0**idx for idx in range(0, len(trajectory))])>-49:
+                        self.n_success_hsm_traj += 1
+                    if (np.linalg.norm(trajectory[0][0]["achieved_goal"] - trajectory[-1][1]["achieved_goal"])>0.02 and
+                         sum([trajectory[idx][3]*1.0**idx for idx in range(0, len(trajectory))])>-49):
+                        self.n_success_dx_hsm_traj += 1
+                    for obs, next_obs, action, reward, done, infos in trajectory:
+                        self.add(obs, next_obs, action, reward, done, infos)
+
+            self.hsm_traj_buffer = []
+
+        if self.gym_robotics_logger:
+            self.gym_robotics_logger.record("buffer/n_hsm_traj", self.n_hsm_traj)
+            self.gym_robotics_logger.record("buffer/n_success_hsm_traj", self.n_success_hsm_traj)
+            self.gym_robotics_logger.record("buffer/n_dx_hsm_traj", self.n_dx_hsm_traj)
+            self.gym_robotics_logger.record("buffer/n_success_dx_hsm_traj", self.n_success_dx_hsm_traj)
+            self.gym_robotics_logger.record("buffer/n_traj", self.n_traj)
+            self.gym_robotics_logger.record("buffer/n_success_traj", self.n_success_traj)
+            self.gym_robotics_logger.record("buffer/n_dx_traj", self.n_dx_traj)
+            self.gym_robotics_logger.record("buffer/n_success_dx_traj", self.n_success_dx_traj)
+
+
+    def add_trajectories_HSM(
+            self,
+            trajectory,
+            hsm_trajectories
+            ):
+
+        if self.online_sampling:
+            self.add_full_trajectories_HSM(trajectory, hsm_trajectories)
+        else:
+            self.add_partial_trajectories_HSM(trajectory, hsm_trajectories)
+
+
+    def add_partial_trajectories_HSM(
+            self,
+            trajectory,
+            hsm_trajectories
+            ):
+
+        # store hsm trajectories in buffer
+        if self.prioritized_replay_baseline:
+            # use 'normal' trajectories
+            for hsm_trajectory in hsm_trajectories:
+                self.hsm_traj_buffer.append((trajectory, trajectory, 0, self.idx_eps_hsm))
+        else:
+            # use extra trajectories
+            idx_env = 0
+            for hsm_trajectory in hsm_trajectories:
+                self.hsm_traj_buffer.append((hsm_trajectory, trajectory, idx_env, self.idx_eps_hsm))
+                idx_env += 1
+        self.idx_eps_hsm += 1
+
+        # calculate criterion for every transition in hsm trajectories buffer
+        if len(self.hsm_traj_buffer)>=self.HSM_n_traj_freq:
+            hsm_transitions = []
+            for hsm_trajectory, trajectory, idx_env, idx_eps in self.hsm_traj_buffer:
+                for idx_trans in range(len(hsm_trajectory)):
+                    transition = hsm_trajectory[idx_trans]
+                    if self.hindsight_state_selection_strategy == HindsightStateSelectionStrategy.RANDOM:
+                        criterion = -np.random.random()
+                    elif self.hindsight_state_selection_strategy == HindsightStateSelectionStrategy.REWARD:
+                        if self.hindsight_state_selection_strategy_horizon == HindsightStateSelectionStrategyHorizon.STEP:
+                            criterion = -transition[3]
+                        elif self.hindsight_state_selection_strategy_horizon == HindsightStateSelectionStrategyHorizon.FUTURE:
+                            criterion = -sum([hsm_trajectory[idx][3]*self.HSM_gamma**(idx-idx_trans) for idx in range(idx_trans, len(hsm_trajectory))])
+                        elif self.hindsight_state_selection_strategy_horizon == HindsightStateSelectionStrategyHorizon.EPISODE:
+                            criterion = -sum([hsm_trajectory[idx][3]*1.0**idx for idx in range(0, len(hsm_trajectory))])
+                        else:
+                            raise ValueError(f"Strategy {self.hindsight_state_selection_strategy} - {self.hindsight_state_selection_strategy_horizon} for sampling hindsight states is not supported!")
+                    elif self.hindsight_state_selection_strategy == HindsightStateSelectionStrategy.ADVANTAGE:
+                        ob, next_ob, action, reward, done, _ = transition
+                        if self.hindsight_state_selection_strategy_horizon == HindsightStateSelectionStrategyHorizon.STEP:
+                            ob_1 = ob
+                            ob_2 = next_ob
+                            reward_sum = reward
+                        elif self.hindsight_state_selection_strategy_horizon == HindsightStateSelectionStrategyHorizon.FUTURE:
+                            ob_1 = ob
+                            reward_sum = sum([hsm_trajectory[idx][3]*self.HSM_gamma**(idx-idx_trans) for idx in range(idx_trans, len(hsm_trajectory))])
+                        elif self.hindsight_state_selection_strategy_horizon == HindsightStateSelectionStrategyHorizon.EPISODE:
+                            ob_1 = hsm_trajectory[0][0]
+                            reward_sum = sum([hsm_trajectory[idx][3]*self.HSM_gamma**idx for idx in range(0, len(hsm_trajectory))])
+                        else:
+                            raise ValueError(f"Strategy {self.hindsight_state_selection_strategy} - {self.hindsight_state_selection_strategy_horizon} for sampling hindsight states is not supported!")
+
+                        action = self.to_torch([action])
+                        ob_norm_1 = self._normalize_obs(ob_1)
+                        ob_norm_1 = {key: self.to_torch([ob_norm_1[key]]) for key in self._observation_keys}
+                        if self.hindsight_state_selection_strategy_horizon == HindsightStateSelectionStrategyHorizon.STEP:
+                            ob_norm_2 = self._normalize_obs(ob_2)
+                            ob_norm_2 = {key: self.to_torch([ob_norm_2[key]]) for key in self._observation_keys}
+                            action_pi_2, _ = self.HSM_policy.actor.action_log_prob(ob_norm_2)
+                            q_value_pi_2 = th.cat(self.HSM_critic(ob_norm_2, action_pi_2), dim=1)
+                            min_qf_pi_2, _ = th.min(q_value_pi_2, dim=1, keepdim=True)
+                            min_qf_pi_2 = min_qf_pi_2[0][0].item()
+                        else:
+                            min_qf_pi_2 = 0
+                        q_value = th.cat(self.HSM_critic(ob_norm_1, action), dim=1)
+                        min_q_value, _ = th.min(q_value, dim=1, keepdim=True)
+                        min_q_value = min_q_value[0][0].item()
+                        advantage = reward_sum + self.HSM_gamma * min_qf_pi_2 *(1 - done) -  min_q_value
+                        criterion = -abs(advantage)
+                    else:
+                        raise ValueError(f"Strategy {self.hindsight_state_selection_strategy} - {self.hindsight_state_selection_strategy_horizon} for sampling hindsight states is not supported!")
+
+                    if self.HSM_use_likelihood_ratio and idx_trans<len(trajectory):
+
+
+                        ob_norm = self._normalize_obs(ob)
+                        ob_norm = {key: self.to_torch([ob_norm[key]]) for key in self._observation_keys}
+                        mean_actions, log_std, _ = self.HSM_policy.actor.get_action_dist_params(ob_norm)
+                        self.HSM_policy.actor.action_dist.proba_distribution(mean_actions, log_std)
+                        log_likelihood = self.HSM_policy.actor.action_dist.log_prob(action)
+
+                        ob_real = trajectory[idx_trans][0]
+                        ob_real_norm = self._normalize_obs(ob_real)
+                        ob_real_norm = {key: self.to_torch([ob_real_norm[key]]) for key in self._observation_keys}
+                        mean_actions, log_std, _ = self.HSM_policy.actor.get_action_dist_params(ob_real_norm)
+                        self.HSM_policy.actor.action_dist.proba_distribution(mean_actions, log_std)
+                        log_likelihood_real = self.HSM_policy.actor.action_dist.log_prob(action)
+
+                        log_likelihood = log_likelihood[0].item()
+                        log_likelihood_real = log_likelihood_real[0].item()
+
+                        is_factor = np.exp(log_likelihood - log_likelihood_real)
+                        is_factor = min(self.HSM_likelihood_ratio_cutoff, is_factor)
+                        is_factor = max(is_factor, self.HSM_likelihood_ratio_cutoff)
+
+                        if idx_trans==0:
+                            is_factor_running_avg = is_factor
+                        else:
+                            is_factor_running_avg = is_factor_running_avg* 0.9 + is_factor*0.1
+
+                        criterion_new = is_factor * criterion
+                        criterion = criterion_new
+
+                    elif self.HSM_use_likelihood_ratio and (not idx_trans<len(trajectory)):
+                        criterion_new = criterion * is_factor_running_avg
+                        criterion = criterion_new
+
+                    hsm_transitions.append((criterion, transition, idx_trans, idx_eps, idx_env))
+
+            #store in log file
+            if self.HSM_logging:
+                with open ("/tmp/log_all.txt", "a+") as f:
+                    f.write(repr(hsm_transitions) + "\n\n")
+                    print("------log------")
+
+
+            # sort by criterion and add to replay buffer
+
+            n_sampled_hindsight_states_eff = max([0, self.n_sampled_hindsight_states + self.n_sampled_hindsight_states_change_per_step * self.n_total_steps])
+            HSM_min_criterion_eff = self.HSM_min_criterion + self.HSM_criterion_change_per_step * self.n_total_steps
+
+            n_to_select = int(len(hsm_transitions) * n_sampled_hindsight_states_eff / self.HSM_shape)
+            random.shuffle(hsm_transitions)
+            hsm_criteria = np.array([t[0] for t in hsm_transitions])
+            indices = np.argpartition(hsm_criteria, n_to_select)[:n_to_select]
+
+            hsm_transitions_selected = []
+            for idx in indices:
+                criterion, transition, _, _, _ = hsm_transitions[idx]
+                if -1.0*criterion>=HSM_min_criterion_eff:
+                    self.replay_buffer.add(*transition)
+
+                    # update current pointer
+                    self.current_idx += 1
+                    self.episode_steps += 1
+
+                    if self.episode_steps >= self.max_episode_length or idx==indices[-1]:
+                        self.store_episode()
+                        if not self.online_sampling:
+                            # clear storage for current episode
+                            self.reset()
+                        self.episode_steps = 0
+
+                    hsm_transitions_selected.append(hsm_transitions[idx])
+
+            if self.HSM_logging:
+                with open ("/tmp/log_select.txt", "a+") as f:
+                    f.write(repr(hsm_transitions_selected) + "\n\n")
+
+            self.hsm_traj_buffer = []
+
+        # add all 'normally' collected transitions
+        # ball_hit = trajectory[-1][3]>0.01
+
+        # for transition in trajectory:
+        #     self.replay_buffer.add(*transition)
+
+        return
+
+
     def _sample_transitions(
         self,
         batch_size: Optional[int],
@@ -323,9 +687,13 @@ class HerReplayBuffer(DictReplayBuffer):
         # get selected transitions
         transitions = {key: self._buffer[key][episode_indices, transitions_indices].copy() for key in self._buffer.keys()}
 
-        # sample new desired goals and relabel the transitions
-        new_goals = self.sample_goals(episode_indices, her_indices, transitions_indices)
-        transitions["desired_goal"][her_indices] = new_goals
+        if self.apply_HER:
+            # sample new desired goals and relabel the transitions
+            new_goals = self.sample_goals(episode_indices, her_indices, transitions_indices)
+            transitions["desired_goal"][her_indices] = new_goals
+
+
+
 
         # Convert info buffer to numpy array
         transitions["info"] = np.array(
@@ -341,20 +709,6 @@ class HerReplayBuffer(DictReplayBuffer):
             # Vectorized computation of the new reward
             transitions["reward"][her_indices, 0] = self.env.env_method(
                 "compute_reward",
-                # the new state depends on the previous state and action
-                # s_{t+1} = f(s_t, a_t)
-                # so the next_achieved_goal depends also on the previous state and action
-                # because we are in a GoalEnv:
-                # r_t = reward(s_t, a_t) = reward(next_achieved_goal, desired_goal)
-                # therefore we have to use "next_achieved_goal" and not "achieved_goal"
-                transitions["next_achieved_goal"][her_indices, 0],
-                # here we use the new desired goal
-                transitions["desired_goal"][her_indices, 0],
-                transitions["info"][her_indices, 0],
-            )
-
-            transitions["done"][her_indices, 0] = self.env.env_method(
-                "compute_done",
                 # the new state depends on the previous state and action
                 # s_{t+1} = f(s_t, a_t)
                 # so the next_achieved_goal depends also on the previous state and action
@@ -414,15 +768,19 @@ class HerReplayBuffer(DictReplayBuffer):
         else:
             done_ = done
 
+        if not hasattr(reward, "__len__"):
+            reward = [reward]
+
         self._buffer["observation"][self.pos][self.current_idx] = obs["observation"]
-        self._buffer["achieved_goal"][self.pos][self.current_idx] = obs["achieved_goal"]
-        self._buffer["desired_goal"][self.pos][self.current_idx] = obs["desired_goal"]
         self._buffer["action"][self.pos][self.current_idx] = action
         self._buffer["done"][self.pos][self.current_idx] = done_
         self._buffer["reward"][self.pos][self.current_idx] = reward
         self._buffer["next_obs"][self.pos][self.current_idx] = next_obs["observation"]
-        self._buffer["next_achieved_goal"][self.pos][self.current_idx] = next_obs["achieved_goal"]
-        self._buffer["next_desired_goal"][self.pos][self.current_idx] = next_obs["desired_goal"]
+        if self.apply_HER or self.HSM_goal_env:
+            self._buffer["achieved_goal"][self.pos][self.current_idx] = obs["achieved_goal"]
+            self._buffer["desired_goal"][self.pos][self.current_idx] = obs["desired_goal"]
+            self._buffer["next_achieved_goal"][self.pos][self.current_idx] = next_obs["achieved_goal"]
+            self._buffer["next_desired_goal"][self.pos][self.current_idx] = next_obs["desired_goal"]
 
         # When doing offline sampling
         # Add real transition to normal replay buffer
@@ -435,8 +793,25 @@ class HerReplayBuffer(DictReplayBuffer):
                 done,
                 infos,
             )
+            self.n_total_steps += 1
 
-        self.info_buffer[self.pos].append(infos)
+
+        # remove extra data from info for info buffer
+        infos_without_extras = []
+        for info in infos:
+            info_without_extras = info.copy()
+            for key in ("extra_obs",
+                    "extra_rewards",
+                    "extra_terminated",
+                    "extra_truncated",
+                    "extra_is_success",
+                    "initial_extra_obs",
+                    "trajectory",
+                    "hsm_trajectories"):
+                if key in info_without_extras:
+                    del info_without_extras[key]
+            infos_without_extras.append(info_without_extras)
+        self.info_buffer[self.pos].append(infos_without_extras)
 
         # update current pointer
         self.current_idx += 1
@@ -446,12 +821,84 @@ class HerReplayBuffer(DictReplayBuffer):
         if done or self.episode_steps >= self.max_episode_length:
             self.store_episode()
             if not self.online_sampling:
-                # sample virtual transitions and store them in replay buffer
-                self._sample_her_transitions()
+                if self.apply_HER:
+                    # sample virtual transitions and store them in replay buffer
+                    self._sample_her_transitions()
                 # clear storage for current episode
                 self.reset()
 
             self.episode_steps = 0
+
+
+        #add transitions when using hsm
+        if self.apply_HSM:
+            for info in infos:
+                if "trajectory" in info:
+                    self.add_trajectories_HSM(
+                        info["trajectory"], info["hsm_trajectories"]
+                    )
+                if "extra_obs" in info:
+                    extra_obs = info["extra_obs"]
+                    extra_rewards = info["extra_rewards"]
+                    extra_dones = info["extra_terminated"]
+                    info_without_extras = info.copy()
+                    del info_without_extras["extra_obs"]
+                    del info_without_extras["extra_rewards"]
+                    del info_without_extras["extra_terminated"]
+                    del info_without_extras["extra_truncated"]
+                    del info_without_extras["extra_is_success"]
+                    del info_without_extras["initial_extra_obs"]
+                    info_for_extras = {}
+                    if info.get("TimeLimit.truncated", False):
+                        info_for_extras = {'TimeLimit.truncated': True}
+                        extra_dones = [True for _ in extra_dones]
+                    if self.extra_reset:
+                        self.extra_current_obs = info["initial_extra_obs"]
+                        self.extra_reset = False
+                    self.current_trajectory.append((
+                        obs,
+                        next_obs,
+                        action,
+                        reward,
+                        done,
+                        [info_without_extras]))
+                    for idx in range(len(extra_obs)):
+                        for key, value in self.extra_current_obs[idx].items():
+                            if value.ndim==1:
+                                self.extra_current_obs[idx][key] = np.array([value])
+                        for key, value in  extra_obs[idx].items():
+                            if value.ndim==1:
+                                extra_obs[idx][key] = np.array([value])
+                        self.current_hsm_trajectories[idx].append((
+                            self.extra_current_obs[idx],
+                            extra_obs[idx],
+                            action,
+                            extra_rewards[idx],
+                            extra_dones[idx],
+                            [info_for_extras]))
+
+
+
+                    self.extra_current_obs = extra_obs.copy()
+
+                    ep_over = done_ or done or np.any(np.array([info.get("TimeLimit.truncated", False) for info in infos]))
+                    if ep_over:
+                        self.add_trajectories_HSM(self.current_trajectory, self.current_hsm_trajectories)
+                        self.current_trajectory = []
+                        self.current_hsm_trajectories = [[]  for _ in range(len(extra_obs))]
+                        self.extra_reset = True
+
+
+
+       
+
+              
+
+
+
+
+
+
 
     def store_episode(self) -> None:
         """

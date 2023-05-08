@@ -12,6 +12,7 @@ from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import polyak_update
 from stable_baselines3.sac.policies import CnnPolicy, MlpPolicy, MultiInputPolicy, SACPolicy
+from stable_baselines3.her.her_replay_buffer import HerReplayBuffer
 
 
 class SAC(OffPolicyAlgorithm):
@@ -110,7 +111,7 @@ class SAC(OffPolicyAlgorithm):
         _init_setup_model: bool = True,
     ):
 
-        super().__init__(
+        super(SAC, self).__init__(
             policy,
             env,
             learning_rate,
@@ -150,7 +151,7 @@ class SAC(OffPolicyAlgorithm):
             self._setup_model()
 
     def _setup_model(self) -> None:
-        super()._setup_model()
+        super(SAC, self)._setup_model()
         self._create_aliases()
         # Target entropy is used when learning the entropy coefficient
         if self.target_entropy == "auto":
@@ -186,7 +187,15 @@ class SAC(OffPolicyAlgorithm):
         self.critic = self.policy.critic
         self.critic_target = self.policy.critic_target
 
+        if self.replay_buffer_class == HerReplayBuffer:
+            self.replay_buffer.gym_robotics_logger = self.logger
+            if self.replay_buffer.apply_HSM:
+                self.replay_buffer.HSM_critic = self.critic
+                self.replay_buffer.HSM_policy = self.policy
+                self.replay_buffer.HSM_critic_target = self.critic_target
+
     def train(self, gradient_steps: int, batch_size: int = 64) -> None:
+
         # Switch to train mode (this affects batch norm / dropout)
         self.policy.set_training_mode(True)
         # Update optimizers learning rate
@@ -248,7 +257,7 @@ class SAC(OffPolicyAlgorithm):
             current_q_values = self.critic(replay_data.observations, replay_data.actions)
 
             # Compute critic loss
-            critic_loss = 0.5 * sum(F.mse_loss(current_q, target_q_values) for current_q in current_q_values)
+            critic_loss = 0.5 * sum([F.mse_loss(current_q, target_q_values) for current_q in current_q_values])
             critic_losses.append(critic_loss.item())
 
             # Optimize the critic
@@ -295,7 +304,11 @@ class SAC(OffPolicyAlgorithm):
         reset_num_timesteps: bool = True,
     ) -> OffPolicyAlgorithm:
 
-        return super().learn(
+        # Share logger with HerReplayBuffer
+        if self.replay_buffer_class == HerReplayBuffer:
+            self.replay_buffer.gym_robotics_logger = self.logger
+
+        return super(SAC, self).learn(
             total_timesteps=total_timesteps,
             callback=callback,
             log_interval=log_interval,
@@ -308,7 +321,7 @@ class SAC(OffPolicyAlgorithm):
         )
 
     def _excluded_save_params(self) -> List[str]:
-        return super()._excluded_save_params() + ["actor", "critic", "critic_target"]
+        return super(SAC, self)._excluded_save_params() + ["actor", "critic", "critic_target"]
 
     def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
         state_dicts = ["policy", "actor.optimizer", "critic.optimizer"]
