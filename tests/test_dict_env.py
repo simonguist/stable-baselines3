@@ -1,3 +1,5 @@
+from typing import Optional
+
 import gym
 import numpy as np
 import pytest
@@ -13,7 +15,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFram
 class DummyDictEnv(gym.Env):
     """Custom Environment for testing purposes only"""
 
-    metadata = {"render.modes": ["human"]}
+    metadata = {"render_modes": []}
 
     def __init__(
         self,
@@ -72,10 +74,12 @@ class DummyDictEnv(gym.Env):
     def compute_reward(self, achieved_goal, desired_goal, info):
         return np.zeros((len(achieved_goal),))
 
-    def reset(self):
+    def reset(self, seed: Optional[int] = None):
+        if seed is not None:
+            self.observation_space.seed(seed)
         return self.observation_space.sample()
 
-    def render(self, mode="human"):
+    def render(self):
         pass
 
 

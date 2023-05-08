@@ -210,7 +210,7 @@ It will save the best model if ``best_model_save_path`` folder is specified and 
     # Use deterministic actions for evaluation
     eval_callback = EvalCallback(eval_env, best_model_save_path='./logs/',
                                  log_path='./logs/', eval_freq=500,
-                                 deterministic=True, render=False)
+                                 deterministic=True)
 
     model = SAC('MlpPolicy', 'Pendulum-v1')
     model.learn(5000, callback=eval_callback)

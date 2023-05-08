@@ -156,7 +156,7 @@ def test_save_load(tmp_path, model_class, use_sde, online_sampling):
     params = deepcopy(model.policy.state_dict())
 
     # Modify all parameters to be random values
-    random_params = dict((param_name, th.rand_like(param)) for param_name, param in params.items())
+    random_params = {param_name: th.rand_like(param) for param_name, param in params.items()}
 
     # Update model parameters with the new random values
     model.policy.load_state_dict(random_params)
@@ -237,7 +237,7 @@ def test_save_load_replay_buffer(tmp_path, recwarn, online_sampling, truncate_la
         train_freq=4,
         buffer_size=int(2e4),
         policy_kwargs=dict(net_arch=[64]),
-        seed=1,
+        seed=0,
     )
     model.learn(200)
     if online_sampling:

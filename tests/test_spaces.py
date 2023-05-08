@@ -1,3 +1,5 @@
+from typing import Optional
+
 import gym
 import numpy as np
 import pytest
@@ -9,11 +11,13 @@ from stable_baselines3.common.evaluation import evaluate_policy
 
 class DummyMultiDiscreteSpace(gym.Env):
     def __init__(self, nvec):
-        super(DummyMultiDiscreteSpace, self).__init__()
+        super().__init__()
         self.observation_space = gym.spaces.MultiDiscrete(nvec)
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
 
-    def reset(self):
+    def reset(self, seed: Optional[int] = None):
+        if seed is not None:
+            super().reset(seed=seed)
         return self.observation_space.sample()
 
     def step(self, action):
@@ -22,11 +26,13 @@ class DummyMultiDiscreteSpace(gym.Env):
 
 class DummyMultiBinary(gym.Env):
     def __init__(self, n):
-        super(DummyMultiBinary, self).__init__()
+        super().__init__()
         self.observation_space = gym.spaces.MultiBinary(n)
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
 
-    def reset(self):
+    def reset(self, seed: Optional[int] = None):
+        if seed is not None:
+            super().reset(seed=seed)
         return self.observation_space.sample()
 
     def step(self, action):

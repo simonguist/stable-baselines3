@@ -109,7 +109,7 @@ It will monitor the actions, observations, and rewards, indicating what action o
 
   class NanAndInfEnv(gym.Env):
       """Custom Environment that raised NaNs and Infs"""
-      metadata = {'render.modes': ['human']}
+      metadata = {'render_modes': ['human']}
 
       def __init__(self):
           super(NanAndInfEnv, self).__init__()
@@ -129,7 +129,7 @@ It will monitor the actions, observations, and rewards, indicating what action o
       def reset(self):
           return [0.0]
 
-      def render(self, mode='human', close=False):
+      def render(self):
           pass
 
   # Create environment

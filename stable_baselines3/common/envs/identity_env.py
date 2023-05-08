@@ -32,7 +32,9 @@ class IdentityEnv(Env):
         self.num_resets = -1  # Becomes 0 after __init__ exits.
         self.reset()
 
-    def reset(self) -> GymObs:
+    def reset(self, seed: Optional[int] = None) -> GymObs:
+        if seed is not None:
+            super().reset(seed=seed)
         self.current_step = 0
         self.num_resets += 1
         self._choose_next_state()
@@ -51,7 +53,7 @@ class IdentityEnv(Env):
     def _get_reward(self, action: Union[int, np.ndarray]) -> float:
         return 1.0 if np.all(self.state == action) else 0.0
 
-    def render(self, mode: str = "human") -> None:
+    def render(self) -> None:
         pass
 
 
@@ -136,7 +138,9 @@ class FakeImageEnv(Env):
         self.ep_length = 10
         self.current_step = 0
 
-    def reset(self) -> np.ndarray:
+    def reset(self, seed: Optional[int] = None) -> np.ndarray:
+        if seed is not None:
+            super().reset(seed=seed)
         self.current_step = 0
         return self.observation_space.sample()
 
@@ -146,5 +150,5 @@ class FakeImageEnv(Env):
         done = self.current_step >= self.ep_length
         return self.observation_space.sample(), reward, done, {}
 
-    def render(self, mode: str = "human") -> None:
+    def render(self) -> None:
         pass

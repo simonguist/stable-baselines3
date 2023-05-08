@@ -1,3 +1,5 @@
+from typing import Optional
+
 import gym
 import numpy as np
 import pytest
@@ -10,7 +12,7 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 
 class CustomEnv(gym.Env):
     def __init__(self, max_steps=8):
-        super(CustomEnv, self).__init__()
+        super().__init__()
         self.observation_space = gym.spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
         self.max_steps = max_steps
@@ -19,7 +21,9 @@ class CustomEnv(gym.Env):
     def seed(self, seed):
         self.observation_space.seed(seed)
 
-    def reset(self):
+    def reset(self, seed: Optional[int] = None):
+        if seed is not None:
+            self.observation_space.seed(seed)
         self.n_steps = 0
         return self.observation_space.sample()
 
@@ -43,7 +47,10 @@ class InfiniteHorizonEnv(gym.Env):
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
         self.current_state = 0
 
-    def reset(self):
+    def reset(self, seed: Optional[int] = None):
+        if seed is not None:
+            super().reset(seed=seed)
+
         self.current_state = 0
         return self.current_state
 
@@ -54,7 +61,7 @@ class InfiniteHorizonEnv(gym.Env):
 
 class CheckGAECallback(BaseCallback):
     def __init__(self):
-        super(CheckGAECallback, self).__init__(verbose=0)
+        super().__init__(verbose=0)
 
     def _on_rollout_end(self):
         buffer = self.model.rollout_buffer
@@ -99,7 +106,7 @@ class CustomPolicy(ActorCriticPolicy):
     """Custom Policy with a constant value function"""
 
     def __init__(self, *args, **kwargs):
-        super(CustomPolicy, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.constant_value = 0.0
 
     def forward(self, obs, deterministic=False):

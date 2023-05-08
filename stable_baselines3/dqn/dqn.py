@@ -20,7 +20,7 @@ class DQN(OffPolicyAlgorithm):
     Deep Q-Network (DQN)
 
     Paper: https://arxiv.org/abs/1312.5602, https://www.nature.com/articles/nature14236
-    Default hyperparameters are taken from the nature paper,
+    Default hyperparameters are taken from the Nature paper,
     except for the optimizer and learning rate that were taken from Stable Baselines defaults.
 
     :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
@@ -95,7 +95,7 @@ class DQN(OffPolicyAlgorithm):
         _init_setup_model: bool = True,
     ):
 
-        super(DQN, self).__init__(
+        super().__init__(
             policy,
             env,
             learning_rate,
@@ -138,7 +138,7 @@ class DQN(OffPolicyAlgorithm):
             self._setup_model()
 
     def _setup_model(self) -> None:
-        super(DQN, self)._setup_model()
+        super()._setup_model()
         self._create_aliases()
         self.exploration_schedule = get_linear_fn(
             self.exploration_initial_eps,
@@ -261,7 +261,7 @@ class DQN(OffPolicyAlgorithm):
         reset_num_timesteps: bool = True,
     ) -> OffPolicyAlgorithm:
 
-        return super(DQN, self).learn(
+        return super().learn(
             total_timesteps=total_timesteps,
             callback=callback,
             log_interval=log_interval,
@@ -274,7 +274,7 @@ class DQN(OffPolicyAlgorithm):
         )
 
     def _excluded_save_params(self) -> List[str]:
-        return super(DQN, self)._excluded_save_params() + ["q_net", "q_net_target"]
+        return super()._excluded_save_params() + ["q_net", "q_net_target"]
 
     def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
         state_dicts = ["policy", "policy.optimizer"]

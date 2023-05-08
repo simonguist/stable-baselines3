@@ -14,11 +14,14 @@ from stable_baselines3.common.vec_env.base_vec_env import (
 )
 
 
-def _worker(
-    remote: mp.connection.Connection, parent_remote: mp.connection.Connection, env_fn_wrapper: CloudpickleWrapper
+def _worker(  # noqa: C901
+    remote: mp.connection.Connection,
+    parent_remote: mp.connection.Connection,
+    env_fn_wrapper: CloudpickleWrapper,
 ) -> None:
     # Import here to avoid a circular import
     from stable_baselines3.common.env_util import is_wrapped
+    from stable_baselines3.common.utils import compat_gym_seed
 
     parent_remote.close()
     env = env_fn_wrapper.var()
@@ -33,12 +36,12 @@ def _worker(
                     observation = env.reset()
                 remote.send((observation, reward, done, info))
             elif cmd == "seed":
-                remote.send(env.seed(data))
+                remote.send(compat_gym_seed(env, seed=data))
             elif cmd == "reset":
                 observation = env.reset()
                 remote.send(observation)
             elif cmd == "render":
-                remote.send(env.render(data))
+                remote.send(env.render())
             elif cmd == "close":
                 env.close()
                 remote.close()
@@ -54,6 +57,10 @@ def _worker(
                 remote.send(setattr(env, data[0], data[1]))
             elif cmd == "is_wrapped":
                 remote.send(is_wrapped(env, data))
+            elif cmd == "set_rgb_array_render_mode":
+                env.renderer.mode = "rgb_array"
+            elif cmd == "set_human_render_mode":
+                env.renderer.mode = "human"
             else:
                 raise NotImplementedError(f"`{cmd}` is not implemented in the worker")
         except EOFError:
@@ -87,7 +94,7 @@ class SubprocVecEnv(VecEnv):
     def __init__(self, env_fns: List[Callable[[], gym.Env]], start_method: Optional[str] = None):
         self.waiting = False
         self.closed = False
-        n_envs = len(env_fns)
+        self.n_envs = len(env_fns)
 
         if start_method is None:
             # Fork is not a thread safe method (see issue #217)
@@ -97,7 +104,7 @@ class SubprocVecEnv(VecEnv):
             start_method = "forkserver" if forkserver_available else "spawn"
         ctx = mp.get_context(start_method)
 
-        self.remotes, self.work_remotes = zip(*[ctx.Pipe() for _ in range(n_envs)])
+        self.remotes, self.work_remotes = zip(*[ctx.Pipe() for _ in range(self.n_envs)])
         self.processes = []
         for work_remote, remote, env_fn in zip(self.work_remotes, self.remotes, env_fns):
             args = (work_remote, remote, CloudpickleWrapper(env_fn))
@@ -109,7 +116,18 @@ class SubprocVecEnv(VecEnv):
 
         self.remotes[0].send(("get_spaces", None))
         observation_space, action_space = self.remotes[0].recv()
-        VecEnv.__init__(self, len(env_fns), observation_space, action_space)
+        self.remotes[0].send(("get_attr", "render_mode"))
+        render_mode = self.remotes[0].recv()
+        if render_mode == "human" and self.n_envs>1:
+            for remote in self.remotes:
+                remote.send(("set_rgb_array_render_mode", None))
+            
+        self.remotes[0].send(("get_attr", "metadata"))
+        self.metadata = self.remotes[0].recv
+        self.remotes[0].send(("get_attr", "spec"))
+        self.spec = self.remotes[0].recv
+
+        VecEnv.__init__(self, len(env_fns), observation_space, action_space, render_mode)
 
     def step_async(self, actions: np.ndarray) -> None:
         for remote, action in zip(self.remotes, actions):
@@ -120,6 +138,8 @@ class SubprocVecEnv(VecEnv):
         results = [remote.recv() for remote in self.remotes]
         self.waiting = False
         obs, rews, dones, infos = zip(*results)
+        if self.num_envs > 1:
+            self.renderer.render_step()
         return _flatten_obs(obs, self.observation_space), np.stack(rews), np.stack(dones), infos
 
     def seed(self, seed: Optional[int] = None) -> List[Union[None, int]]:
@@ -133,6 +153,9 @@ class SubprocVecEnv(VecEnv):
         for remote in self.remotes:
             remote.send(("reset", None))
         obs = [remote.recv() for remote in self.remotes]
+        if self.num_envs > 1:
+            self.renderer.reset()
+            self.renderer.render_step()
         return _flatten_obs(obs, self.observation_space)
 
     def close(self) -> None:
@@ -151,9 +174,24 @@ class SubprocVecEnv(VecEnv):
         for pipe in self.remotes:
             # gather images from subprocesses
             # `mode` will be taken into account later
-            pipe.send(("render", "rgb_array"))
-        imgs = [pipe.recv() for pipe in self.remotes]
+            pipe.send(("render", None))
+        imgs = [pipe.recv()[0] for pipe in self.remotes]
         return imgs
+    
+    def update_render_mode(self, render_mode: Optional[str] = None):
+        # Update global vec env renderer render mode
+        self.render_mode = render_mode
+        self.renderer.mode = render_mode
+        # Update individual environment render mode
+        if self.n_envs>1:
+            for remote in self.remotes:
+                # If human rendering and more than 1 env 
+                # in VecEnv the individual environments 
+                # need to output rgb array's to create image tiles.
+                remote.send(("set_rgb_array_render_mode", None))
+        else:
+            self.envs[0].render_mode = render_mode
+            self.envs[0].renderer.mode = render_mode
 
     def get_attr(self, attr_name: str, indices: VecEnvIndices = None) -> List[Any]:
         """Return attribute from vectorized environment (see base class)."""
@@ -217,6 +255,6 @@ def _flatten_obs(obs: Union[List[VecEnvObs], Tuple[VecEnvObs]], space: gym.space
     elif isinstance(space, gym.spaces.Tuple):
         assert isinstance(obs[0], tuple), "non-tuple observation for environment with Tuple observation space"
         obs_len = len(space.spaces)
-        return tuple((np.stack([o[i] for o in obs]) for i in range(obs_len)))
+        return tuple(np.stack([o[i] for o in obs]) for i in range(obs_len))
     else:
         return np.stack(obs)

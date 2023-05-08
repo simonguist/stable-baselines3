@@ -148,7 +148,6 @@ def test_evaluate_policy():
         model.get_env(),
         n_eval_episodes,
         deterministic=True,
-        render=False,
         callback=dummy_callback,
         reward_threshold=None,
         return_episode_rewards=True,
@@ -180,7 +179,7 @@ class AlwaysDoneWrapper(gym.Wrapper):
     # Pretends that environment only has single step for each
     # episode.
     def __init__(self, env):
-        super(AlwaysDoneWrapper, self).__init__(env)
+        super().__init__(env)
         self.last_obs = None
         self.needs_reset = True
 
@@ -229,7 +228,7 @@ def test_evaluate_policy_monitors(vec_env_class):
     # Also test VecEnvs
     n_eval_episodes = 3
     n_envs = 2
-    env_id = "CartPole-v0"
+    env_id = "CartPole-v1"
     model = A2C("MlpPolicy", env_id, seed=0)
 
     def make_eval_env(with_monitor, wrapper_class=gym.Wrapper):

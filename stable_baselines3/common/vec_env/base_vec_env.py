@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, U
 
 import cloudpickle
 import gym
+from gym.utils.renderer import Renderer
 import numpy as np
 
 # Define type aliases here to avoid circular import
@@ -53,12 +54,14 @@ class VecEnv(ABC):
     :param action_space: the action space
     """
 
-    metadata = {"render.modes": ["human", "rgb_array"]}
+    metadata = {"render_modes": ["human", "rgb_array"]}
 
-    def __init__(self, num_envs: int, observation_space: gym.spaces.Space, action_space: gym.spaces.Space):
+    def __init__(self, num_envs: int, observation_space: gym.spaces.Space, action_space: gym.spaces.Space, render_mode: Optional[str] = None):
         self.num_envs = num_envs
         self.observation_space = observation_space
         self.action_space = action_space
+        self.render_mode = render_mode
+        self.renderer = Renderer(self.render_mode, self._render)
 
     @abstractmethod
     def reset(self) -> VecEnvObs:
@@ -160,6 +163,15 @@ class VecEnv(ABC):
         """
         self.step_async(actions)
         return self.step_wait()
+    
+    @abstractmethod
+    def update_render_mode(self, render_mode: Optional[str] = None):
+        """
+        Assign a render mode to the renderer.
+
+        :param render_mode: new render mode, "human", "rgb_array" or "None"
+        """
+        raise NotImplementedError
 
     def get_images(self) -> Sequence[np.ndarray]:
         """
@@ -167,7 +179,7 @@ class VecEnv(ABC):
         """
         raise NotImplementedError
 
-    def render(self, mode: str = "human") -> Optional[np.ndarray]:
+    def _render(self, mode: str) -> Optional[np.ndarray]:
         """
         Gym environment rendering
 
@@ -181,6 +193,7 @@ class VecEnv(ABC):
 
         # Create a big image by tiling images from subprocesses
         bigimg = tile_images(imgs)
+        
         if mode == "human":
             import cv2  # pytype:disable=import-error
 
@@ -191,6 +204,9 @@ class VecEnv(ABC):
         else:
             raise NotImplementedError(f"Render mode {mode} is not supported by VecEnvs")
 
+    def render(self):
+        return self.renderer.get_renders()
+        
     @abstractmethod
     def seed(self, seed: Optional[int] = None) -> List[Union[None, int]]:
         """
@@ -252,14 +268,17 @@ class VecEnvWrapper(VecEnv):
         action_space: Optional[gym.spaces.Space] = None,
     ):
         self.venv = venv
+        self.spec = venv.spec
+        self.metadata
         VecEnv.__init__(
             self,
             num_envs=venv.num_envs,
             observation_space=observation_space or venv.observation_space,
             action_space=action_space or venv.action_space,
+            render_mode=venv.render_mode
         )
         self.class_attributes = dict(inspect.getmembers(self.__class__))
-
+    
     def step_async(self, actions: np.ndarray) -> None:
         self.venv.step_async(actions)
 
@@ -277,9 +296,11 @@ class VecEnvWrapper(VecEnv):
     def close(self) -> None:
         return self.venv.close()
 
-    def render(self, mode: str = "human") -> Optional[np.ndarray]:
-        return self.venv.render(mode=mode)
+    def render(self) -> Optional[np.ndarray]:
+        return self.venv.render()
 
+    def update_render_mode(self, render_mode: Optional[str] = None):
+        return self.venv.update_render_mode(render_mode)
     def get_images(self) -> Sequence[np.ndarray]:
         return self.venv.get_images()
 
@@ -305,7 +326,7 @@ class VecEnvWrapper(VecEnv):
             own_class = f"{type(self).__module__}.{type(self).__name__}"
             error_str = (
                 f"Error: Recursive attribute lookup for {name} from {own_class} is "
-                "ambiguous and hides attribute from {blocked_class}"
+                f"ambiguous and hides attribute from {blocked_class}"
             )
             raise AttributeError(error_str)
 

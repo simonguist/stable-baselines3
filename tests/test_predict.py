@@ -41,7 +41,7 @@ def test_auto_wrap(model_class):
 
     # Use different environment for DQN
     if model_class is DQN:
-        env_name = "CartPole-v0"
+        env_name = "CartPole-v1"
     else:
         env_name = "Pendulum-v1"
     env = gym.make(env_name)
@@ -73,11 +73,13 @@ def test_predict(model_class, env_id, device):
 
     obs = env.reset()
     action, _ = model.predict(obs)
+    assert isinstance(action, np.ndarray)
     assert action.shape == env.action_space.shape
     assert env.action_space.contains(action)
 
     vec_env_obs = vec_env.reset()
     action, _ = model.predict(vec_env_obs)
+    assert isinstance(action, np.ndarray)
     assert action.shape[0] == vec_env_obs.shape[0]
 
     # Special case for DQN to check the epsilon greedy exploration

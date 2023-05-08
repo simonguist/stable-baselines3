@@ -2,13 +2,14 @@ from collections import OrderedDict
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
-from gym import GoalEnv, spaces
+from gym import Env, spaces
+from gym.utils.renderer import Renderer
 from gym.envs.registration import EnvSpec
 
 from stable_baselines3.common.type_aliases import GymStepReturn
 
 
-class BitFlippingEnv(GoalEnv):
+class BitFlippingEnv(Env):
     """
     Simple bit flipping env, useful to test HER.
     The goal is to flip all the bits to get a vector of ones.
@@ -27,6 +28,11 @@ class BitFlippingEnv(GoalEnv):
 
     spec = EnvSpec("BitFlippingEnv-v0")
 
+    metadata = {
+        "render_modes": ["rgb_array", "human"],
+        "render_fps": 4,
+    }
+
     def __init__(
         self,
         n_bits: int = 10,
@@ -35,8 +41,9 @@ class BitFlippingEnv(GoalEnv):
         discrete_obs_space: bool = False,
         image_obs_space: bool = False,
         channel_first: bool = True,
+        render_mode: Optional[str] = None,
     ):
-        super(BitFlippingEnv, self).__init__()
+        super().__init__()
         # Shape of the observation when using image space
         self.image_shape = (1, 36, 36) if channel_first else (36, 36, 1)
         # The achieved goal is determined by the current state
@@ -102,6 +109,10 @@ class BitFlippingEnv(GoalEnv):
         self.max_steps = max_steps
         self.current_step = 0
 
+        self.render_mode = render_mode
+
+        self.renderer = Renderer(self.render_mode, self._render)
+
     def seed(self, seed: int) -> None:
         self.obs_space.seed(seed)
 
@@ -115,7 +126,7 @@ class BitFlippingEnv(GoalEnv):
         if self.discrete_obs_space:
             # The internal state is the binary representation of the
             # observed one
-            return int(sum([state[i] * 2**i for i in range(len(state))]))
+            return int(sum(state[i] * 2**i for i in range(len(state))))
 
         if self.image_obs_space:
             size = np.prod(self.image_shape)
@@ -135,7 +146,7 @@ class BitFlippingEnv(GoalEnv):
         if isinstance(state, int):
             state = np.array(state).reshape(batch_size, -1)
             # Convert to binary representation
-            state = (((state[:, :] & (1 << np.arange(len(self.state))))) > 0).astype(int)
+            state = ((state[:, :] & (1 << np.arange(len(self.state)))) > 0).astype(int)
         elif self.image_obs_space:
             state = state.reshape(batch_size, -1)[:, : len(self.state)] / 255
         else:
@@ -157,12 +168,24 @@ class BitFlippingEnv(GoalEnv):
             ]
         )
 
-    def reset(self) -> Dict[str, Union[int, np.ndarray]]:
+    def reset(self, seed: Optional[int] = None) -> Dict[str, Union[int, np.ndarray]]:
+        if seed is not None:
+            self.obs_space.seed(seed)
         self.current_step = 0
         self.state = self.obs_space.sample()
+
+        self.renderer.reset()
+        self.renderer.render_step()
+
         return self._get_obs()
 
     def step(self, action: Union[np.ndarray, int]) -> GymStepReturn:
+        """
+        Step into the env.
+
+        :param action:
+        :return:
+        """
         if self.continuous:
             self.state[action > 0] = 1 - self.state[action > 0]
         else:
@@ -174,6 +197,8 @@ class BitFlippingEnv(GoalEnv):
         # Episode terminate when we reached the goal or the max number of steps
         info = {"is_success": done}
         done = done or self.current_step >= self.max_steps
+        self.renderer.render_step()
+
         return obs, reward, done, info
 
     def compute_reward(
@@ -195,7 +220,11 @@ class BitFlippingEnv(GoalEnv):
         distance = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
         return -(distance > 0).astype(np.float32)
 
-    def render(self, mode: str = "human") -> Optional[np.ndarray]:
+    def render(self) :
+        return self.renderer.get_renders()
+        
+    def _render(self, mode: str)-> Optional[np.ndarray]:
+        assert mode in self.metadata["render_modes"]
         if mode == "rgb_array":
             return self.state.copy()
         print(self.state)

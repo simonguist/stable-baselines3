@@ -27,7 +27,7 @@ That is to say, your environment must implement the following methods (and inher
 
   class CustomEnv(gym.Env):
       """Custom Environment that follows gym interface"""
-      metadata = {'render.modes': ['human']}
+      metadata = {'render_modes': ['human']}
 
       def __init__(self, arg1, arg2, ...):
           super(CustomEnv, self).__init__()
@@ -45,7 +45,7 @@ That is to say, your environment must implement the following methods (and inher
       def reset(self):
           ...
           return observation  # reward, done, info can't be included
-      def render(self, mode='human'):
+      def render(self):
           ...
       def close (self):
           ...

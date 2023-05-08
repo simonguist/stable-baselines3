@@ -33,7 +33,7 @@ class NoopResetEnv(gym.Wrapper):
         if self.override_num_noops is not None:
             noops = self.override_num_noops
         else:
-            noops = self.unwrapped.np_random.randint(1, self.noop_max + 1)
+            noops = self.unwrapped.np_random.integers(1, self.noop_max + 1)
         assert noops > 0
         obs = np.zeros(0)
         for _ in range(noops):
@@ -235,8 +235,10 @@ class AtariWrapper(gym.Wrapper):
         terminal_on_life_loss: bool = True,
         clip_reward: bool = True,
     ):
-        env = NoopResetEnv(env, noop_max=noop_max)
-        env = MaxAndSkipEnv(env, skip=frame_skip)
+        if noop_max > 0:
+            env = NoopResetEnv(env, noop_max=noop_max)
+        if frame_skip > 0:
+            env = MaxAndSkipEnv(env, skip=frame_skip)
         if terminal_on_life_loss:
             env = EpisodicLifeEnv(env)
         if "FIRE" in env.unwrapped.get_action_meanings():
@@ -245,4 +247,4 @@ class AtariWrapper(gym.Wrapper):
         if clip_reward:
             env = ClipRewardEnv(env)
 
-        super(AtariWrapper, self).__init__(env)
+        super().__init__(env)

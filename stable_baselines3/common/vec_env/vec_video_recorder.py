@@ -44,6 +44,7 @@ class VecVideoRecorder(VecEnvWrapper):
 
         if isinstance(temp_env, DummyVecEnv) or isinstance(temp_env, SubprocVecEnv):
             metadata = temp_env.get_attr("metadata")[0]
+            render_mode = temp_env.get_attr("render_mode")
         else:
             metadata = temp_env.metadata
 
