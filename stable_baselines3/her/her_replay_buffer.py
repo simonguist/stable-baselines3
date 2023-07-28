@@ -424,9 +424,7 @@ class HerReplayBuffer(DictReplayBuffer):
 
             n_to_select = self.n_sampled_hindsight_states * self.HSM_n_traj_freq // self.HSM_shape
             hsm_criteria = np.array([t[0] for t in hsm_trajectories_criterion])
-            print("crit:", hsm_criteria, "n:", n_to_select)
             indices = np.argpartition(hsm_criteria, n_to_select)[:n_to_select]
-            print("ind:", indices)
 
             HSM_min_criterion_eff = self.HSM_min_criterion + self.HSM_criterion_change_per_step * self.n_total_steps
 
