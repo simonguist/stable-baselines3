@@ -2,14 +2,14 @@
 
 This is the implementation of the algorithm Hindsight States (HiS) for Stable Baselines3. Hindsight States is a new algorithm, that aims to make Reinforcement Learning more efficient, by splitting the state into two parts ('real' and 'virtual'), and concurrently simulating multiple instances of the virtual part. The virtual parts are then relabelled 'in Hindsight'. For more details check out the paper linked below.
 
-Check out the [main repo](https://github.com/DLR-RM/stable-baselines3) for an introduction to SB3.
+For an introduction to SB3 check out the [main repo](https://github.com/DLR-RM/stable-baselines3).
 
 
 ## Example 1: Fetch Robotics Environments
 
-<img src="docs/\_static/img/his_fetch.png"  width="80%"/>
+<img src="docs/\_static/img/his_fetch.png"  width="70%"/>
 
-Here is a quick example of how to use HiS with a Fetch Robotics environment. It uses the Gymnasium-Robotics-HYSR package, that implements the Fetch environments with parallel virtual objects.
+Here is an example of how to use HiS with a Fetch Robotics environment. It uses the Gymnasium-Robotics-HYSR package, that implements the Fetch environments with parallel virtual objects.
 
 To reproduce the results of the paper, increase the number of timesteps. We recommend creating a new virtual environment to install the required Python packages.
 
@@ -104,7 +104,7 @@ env.close()
 
 ## Example 2: Table Tennis Environment
 
-<img src="docs/\_static/img/his_tt.png"  width="80%"/>
+<img src="docs/\_static/img/his_tt.png"  width="50%"/>
 
 Main prerequisites:
 [PAM robot software](https://intelligent-soft-robots.github.io/pam_documentation/) and [learning_table_tennis_from_scratch](https://github.com/intelligent-soft-robots/learning_table_tennis_from_scratch)
