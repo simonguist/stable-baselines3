@@ -121,6 +121,10 @@ class HerReplayBuffer(DictReplayBuffer):
             assert isinstance(
                 self.goal_selection_strategy, GoalSelectionStrategy
             ), f"Invalid goal selection strategy, please use one of {list(GoalSelectionStrategy)}"
+        else:
+            n_sampled_goal = 0
+
+
         if apply_HSM:
             # convert hindsight_state_selection_strategy into HindsightSelectionStrategy if string
             if isinstance(hindsight_state_selection_strategy, str):
@@ -164,8 +168,6 @@ class HerReplayBuffer(DictReplayBuffer):
 
         if online_sampling:
             replay_buffer = None
-            if apply_HSM and not apply_HER:
-                raise ValueError(f"Online sampling for sampling hindsight states is not supported!")
         self.replay_buffer = replay_buffer
         self.online_sampling = online_sampling
 
@@ -579,7 +581,6 @@ class HerReplayBuffer(DictReplayBuffer):
             if self.HSM_logging:
                 with open ("/tmp/log_all.txt", "a+") as f:
                     f.write(repr(hsm_transitions) + "\n\n")
-                    print("------log------")
 
 
             # sort by criterion and add to replay buffer
